@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Baby Tracker",
+    "slug": "baby-tracker",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "scheme": "babytracker",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.priyabhasin.babytracker",
+      "infoPlist": {
+        "NSUserNotificationsUsageDescription": "Baby Tracker can send optional reminders for care events you choose."
+      }
+    },
+    "plugins": [
+      "expo-notifications",
+      "expo-sqlite",
+      "expo-sharing"
+    ],
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F6F8F4"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ]
+  }
+}

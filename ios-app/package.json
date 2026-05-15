@@ -1,0 +1,32 @@
+{
+  "name": "baby-tracker-ios",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start",
+    "ios": "expo start --ios",
+    "android": "expo start --android",
+    "web": "expo start --web",
+    "doctor": "expo-doctor",
+    "export:ios": "expo export --platform ios --output-dir dist-ios",
+    "build:ios": "npx --yes eas-cli build --platform ios --profile production",
+    "submit:ios": "npx --yes eas-cli submit --platform ios --profile production"
+  },
+  "dependencies": {
+    "expo": "^55.0.24",
+    "expo-application": "~55.0.15",
+    "expo-constants": "~55.0.16",
+    "expo-file-system": "~55.0.20",
+    "expo-notifications": "^55.0.23",
+    "expo-print": "~55.0.15",
+    "expo-sharing": "~55.0.19",
+    "expo-sqlite": "~55.0.16",
+    "expo-status-bar": "~55.0.6",
+    "react": "19.2.0",
+    "react-native": "0.83.6"
+  },
+  "devDependencies": {
+    "expo-doctor": "^1.18.1"
+  }
+}
