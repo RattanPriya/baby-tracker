@@ -9,6 +9,18 @@ npm install
 npm run ios
 ```
 
+## Run From Xcode
+
+Open the workspace, not the project file:
+
+```sh
+open ios/BabyTracker.xcworkspace
+```
+
+In Xcode, choose the `BabyTracker` scheme and an iOS Simulator, then press Run.
+Opening `ios/BabyTracker.xcodeproj` directly will fail because CocoaPods modules
+such as Expo are only wired into the workspace.
+
 ## App Store Configuration
 
 - Bundle ID: `com.priyabhasin.babytracker`
