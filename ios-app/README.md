@@ -21,6 +21,10 @@ In Xcode, choose the `BabyTracker` scheme and an iOS Simulator, then press Run.
 Opening `ios/BabyTracker.xcodeproj` directly will fail because CocoaPods modules
 such as Expo are only wired into the workspace.
 
+The shared Xcode scheme runs the simulator with a bundled Release build so it can
+launch without a separate Metro server. For hot reload/dev-server development,
+use `npm run ios` from this folder instead.
+
 ## App Store Configuration
 
 - Bundle ID: `com.priyabhasin.babytracker`
