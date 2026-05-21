@@ -17,6 +17,7 @@ import {
   useColorScheme,
   View,
 } from 'react-native';
+import { buildInsightPlan, insightSources, weeklyInsights } from './src/insights';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -338,6 +339,16 @@ export default function App() {
     });
   }, [events, selectedDate]);
 
+  const insightPlan = useMemo(() => {
+    if (!baby) return null;
+    return buildInsightPlan({
+      ageDays: daysOld(baby.birthDate, selectedDate),
+      dayEvents,
+      weeklyEvents,
+      summary,
+    });
+  }, [baby, dayEvents, selectedDate, summary, weeklyEvents]);
+
   async function updateBaby(field, value) {
     if (!baby) return;
     const nextBaby = { ...baby, [field]: value };
@@ -531,6 +542,29 @@ export default function App() {
           <Stat label="Meds" value={summary.meds} sub="Doses logged" styles={styles} />
         </View>
 
+        {insightPlan ? (
+          <Section eyebrow="Insights" title={`Week ${insightPlan.week}: what to expect`} styles={styles}>
+            <InsightHero insightPlan={insightPlan} styles={styles} />
+            <View style={styles.insightGrid}>
+              <InsightCard label="Feeding" text={insightPlan.insight.feeding} styles={styles} />
+              <InsightCard label="Sleep" text={insightPlan.insight.sleep} styles={styles} />
+              <InsightCard label="Growth" text={insightPlan.insight.growth} styles={styles} />
+              <InsightCard label="Try today" text={insightPlan.insight.tryToday} styles={styles} highlight />
+            </View>
+            <View style={styles.personalizedCard}>
+              <Text style={styles.detailTitle}>Based on today's logs</Text>
+              {insightPlan.personalized.map((item) => (
+                <Text key={item} style={styles.personalizedText}>- {item}</Text>
+              ))}
+            </View>
+            <Checklist items={insightPlan.insight.checklist} styles={styles} />
+            <BadgeRow badges={insightPlan.badges} styles={styles} />
+            <Text style={styles.safety}>
+              This app does not replace medical advice. Contact your pediatrician or emergency services for urgent concerns.
+            </Text>
+          </Section>
+        ) : null}
+
         <Section eyebrow="One-tap logging" title="What just happened?" styles={styles}>
           <View style={styles.actionGrid}>
             {actions.map((action) => (
@@ -628,6 +662,22 @@ export default function App() {
           <Trend label="Growth notes" value={trend(['growth'])} styles={styles} />
         </Section>
 
+        {insightPlan ? (
+          <Section eyebrow="Library" title="First-year guidance plan" styles={styles}>
+            <Text style={styles.empty}>
+              The app now has local weekly insight coverage for weeks 1-52, with detailed newborn content for weeks 1-8 and expandable guidance phases through the first birthday.
+            </Text>
+            <View style={styles.libraryGrid}>
+              <LibraryStat label="Weeks" value={weeklyInsights.length} styles={styles} />
+              <LibraryStat label="Sources" value={insightSources.length} styles={styles} />
+            </View>
+            <Text style={styles.sourceTitle}>Source-informed, original wording</Text>
+            {insightPlan.sourceLabels.map((label) => (
+              <Text key={label} style={styles.sourceText}>{label}</Text>
+            ))}
+          </Section>
+        ) : null}
+
         <Section eyebrow="Reminders" title="Local notifications" styles={styles}>
           {reminders.map((reminder) => (
             <Pressable key={reminder.id} style={styles.reminderRow} onPress={() => toggleReminder(reminder)}>
@@ -686,6 +736,69 @@ function Stat({ label, value, sub, styles }) {
       <Text style={styles.statValue}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
       <Text style={styles.statSub}>{sub}</Text>
+    </View>
+  );
+}
+
+function InsightHero({ insightPlan, styles }) {
+  return (
+    <View style={styles.insightHero}>
+      <Text style={styles.insightWeek}>Week {insightPlan.week}</Text>
+      <Text style={styles.insightTitle}>{insightPlan.insight.title}</Text>
+      <Text style={styles.insightSummary}>{insightPlan.insight.summary}</Text>
+    </View>
+  );
+}
+
+function InsightCard({ label, text, styles, highlight = false }) {
+  return (
+    <View style={[styles.insightCard, highlight && styles.insightCardHighlight]}>
+      <Text style={styles.insightCardLabel}>{label}</Text>
+      <Text style={styles.insightCardText}>{text}</Text>
+    </View>
+  );
+}
+
+function Checklist({ items, styles }) {
+  return (
+    <View style={styles.checklist}>
+      <Text style={styles.detailTitle}>Prepared parent checklist</Text>
+      {items.map((item) => (
+        <View key={item} style={styles.checkItem}>
+          <View style={styles.checkDot} />
+          <Text style={styles.checkText}>{item}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function BadgeRow({ badges, styles }) {
+  if (badges.length === 0) {
+    return (
+      <View style={styles.badgeEmpty}>
+        <Text style={styles.badgeEmptyText}>Log a few care moments today to unlock calm progress badges.</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.badgeRow}>
+      {badges.map((badge) => (
+        <View key={badge.id} style={styles.badge}>
+          <Text style={styles.badgeLabel}>{badge.label}</Text>
+          <Text style={styles.badgeDetail}>{badge.detail}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function LibraryStat({ label, value, styles }) {
+  return (
+    <View style={styles.libraryStat}>
+      <Text style={styles.libraryValue}>{value}</Text>
+      <Text style={styles.libraryLabel}>{label}</Text>
     </View>
   );
 }
@@ -854,6 +967,152 @@ function createStyles(theme) {
     statSub: {
       color: theme.muted,
       marginTop: 3,
+    },
+    insightHero: {
+      padding: 14,
+      borderRadius: 14,
+      backgroundColor: theme.cardSoft,
+      gap: 7,
+    },
+    insightWeek: {
+      color: theme.primary,
+      fontSize: 12,
+      fontWeight: '900',
+      textTransform: 'uppercase',
+    },
+    insightTitle: {
+      color: theme.text,
+      fontSize: 18,
+      fontWeight: '900',
+      lineHeight: 23,
+    },
+    insightSummary: {
+      color: theme.muted,
+      lineHeight: 21,
+    },
+    insightGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 10,
+    },
+    insightCard: {
+      flexGrow: 1,
+      flexBasis: '47%',
+      minHeight: 124,
+      padding: 13,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: theme.border,
+      backgroundColor: theme.card,
+      gap: 7,
+    },
+    insightCardHighlight: {
+      backgroundColor: theme.cardSoft,
+      borderColor: theme.primary,
+    },
+    insightCardLabel: {
+      color: theme.primary,
+      fontSize: 12,
+      fontWeight: '900',
+      textTransform: 'uppercase',
+    },
+    insightCardText: {
+      color: theme.text,
+      lineHeight: 20,
+    },
+    personalizedCard: {
+      padding: 13,
+      borderRadius: 14,
+      backgroundColor: theme.cardSoft,
+      gap: 8,
+    },
+    personalizedText: {
+      color: theme.text,
+      lineHeight: 20,
+    },
+    checklist: {
+      padding: 13,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: theme.border,
+      gap: 9,
+    },
+    checkItem: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 9,
+    },
+    checkDot: {
+      width: 18,
+      height: 18,
+      borderRadius: 999,
+      borderWidth: 2,
+      borderColor: theme.primary,
+      marginTop: 1,
+    },
+    checkText: {
+      flex: 1,
+      color: theme.text,
+      lineHeight: 20,
+    },
+    badgeRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 10,
+    },
+    badge: {
+      flexGrow: 1,
+      flexBasis: '47%',
+      padding: 12,
+      borderRadius: 14,
+      backgroundColor: theme.primary,
+      gap: 4,
+    },
+    badgeLabel: {
+      color: '#FFFFFF',
+      fontWeight: '900',
+    },
+    badgeDetail: {
+      color: 'rgba(255, 255, 255, 0.82)',
+      lineHeight: 18,
+    },
+    badgeEmpty: {
+      padding: 13,
+      borderRadius: 14,
+      backgroundColor: theme.cardSoft,
+    },
+    badgeEmptyText: {
+      color: theme.muted,
+      lineHeight: 20,
+    },
+    libraryGrid: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    libraryStat: {
+      flex: 1,
+      padding: 13,
+      borderRadius: 14,
+      backgroundColor: theme.cardSoft,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    libraryValue: {
+      color: theme.text,
+      fontSize: 26,
+      fontWeight: '900',
+    },
+    libraryLabel: {
+      color: theme.muted,
+      fontWeight: '900',
+    },
+    sourceTitle: {
+      color: theme.text,
+      fontWeight: '900',
+    },
+    sourceText: {
+      color: theme.muted,
+      lineHeight: 20,
     },
     section: {
       padding: 16,

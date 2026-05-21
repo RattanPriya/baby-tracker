@@ -3,7 +3,7 @@ PODS:
     - ExpoModulesCore
   - EXConstants (55.0.16):
     - ExpoModulesCore
-  - Expo (55.0.24):
+  - Expo (55.0.26):
     - ExpoModulesCore
     - hermes-engine
     - RCTRequired
@@ -32,9 +32,9 @@ PODS:
     - ExpoModulesCore
   - ExpoDomWebView (55.0.6):
     - ExpoModulesCore
-  - ExpoFileSystem (55.0.20):
+  - ExpoFileSystem (55.0.22):
     - ExpoModulesCore
-  - ExpoFont (55.0.7):
+  - ExpoFont (55.0.8):
     - ExpoModulesCore
   - ExpoKeepAwake (55.0.8):
     - ExpoModulesCore
@@ -73,7 +73,7 @@ PODS:
     - ExpoModulesCore
   - ExpoPrint (55.0.15):
     - ExpoModulesCore
-  - ExpoSharing (55.0.19):
+  - ExpoSharing (55.0.20):
     - ExpoModulesCore
   - ExpoSQLite (55.0.16):
     - ExpoModulesCore
@@ -2134,18 +2134,18 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   EXApplication: 82a44fa8236bb644a805ee21e64054eeb01d22ea
   EXConstants: dadbeba983acc30f855a919658a2b34fbd86615d
-  Expo: 16f3bba63c001ae67319631affd50e83c429d7c6
+  Expo: a74260e921728e06b81d3811a508acd5858812d6
   ExpoAsset: 7721c5c4ae2a7c3c8147a046727ac6c020b05648
   ExpoDomWebView: b2e9d601f9cb77d3c97da73234e175b64be91928
-  ExpoFileSystem: 5d01aa6678ccde01172351aad5720ee16845ae82
-  ExpoFont: a95606f106a6394df8edf6d0d87aab9020af5ad4
+  ExpoFileSystem: 61e663d0bbd1a973d324530d1d6ee559a5e5192c
+  ExpoFont: a7e34a75bdfb703fa07a0e87807f836236608c76
   ExpoKeepAwake: d0eb7a0719500d2a43fbf29b6f79e84d70c75ebf
   ExpoLogBox: a678d36477ab9544fe63e0b5328a0716539b6774
   ExpoModulesCore: 998d0fbf7f687b1ff715b87cec779fc92be628ac
   ExpoModulesJSI: 964334271fc77832736f66ee1785761cdc778dbe
   ExpoNotifications: 61c46aa5df088ff0ad41de0504a86a92333aec55
   ExpoPrint: f32bc4389a51f0c8bb921835529396571fb8a0b1
-  ExpoSharing: 641637bdd478455f33c5f78d68c2c9a5d42cb0bc
+  ExpoSharing: ae902b28ac0eb274d771411f39a7daad2529309d
   ExpoSQLite: f590370153b853bfebec84566e8bc3eeac7c7d54
   FBLazyVector: 427fa1856a481856091061293ce865a75aa4f20f
   hermes-engine: 36bf485180a78d0cac34b575c4ddc77f45068e44
