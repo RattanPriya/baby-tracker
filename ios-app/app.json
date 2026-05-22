@@ -19,6 +19,11 @@
       "expo-sqlite",
       "expo-sharing"
     ],
+    "extra": {
+      "revenueCatIosApiKey": "",
+      "supabaseUrl": "",
+      "supabaseAnonKey": ""
+    },
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",

@@ -1,5 +1,12 @@
 # Multi-Agent Kickoff
 
+This doc is the original kickoff summary. The active operating system is now:
+
+- `AGENTS.md`
+- `docs/agentic-business-team.md`
+
+Use those files first for routing, agent roles, business workflows, and failure-review rules.
+
 ## Product Lead
 
 Decisions:

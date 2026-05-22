@@ -8,6 +8,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Linking,
+  Modal,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -18,6 +20,9 @@ import {
   View,
 } from 'react-native';
 import { buildInsightPlan, insightSources, weeklyInsights } from './src/insights';
+import { EntitlementProvider, usePlusAccess } from './src/monetization';
+import { isSupabaseConfigured, supabase } from './src/supabaseClient';
+import { syncBabyTrackerData } from './src/sync';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -256,12 +261,80 @@ function buildPdfHtml(baby, events, summary) {
   `;
 }
 
+function buildPediatricianPrepHtml(baby, events, summary, insightPlan) {
+  const lastSevenDays = events.slice(0, 120);
+  const rows = lastSevenDays.map((event) => `
+    <tr>
+      <td>${event.date}</td>
+      <td>${event.time}</td>
+      <td>${event.label}</td>
+      <td>${event.amount || ''}</td>
+      <td>${event.detail || ''}</td>
+    </tr>
+  `).join('');
+
+  const questions = [
+    insightPlan?.insight?.feeding ? 'Are feeding patterns and output on track for this age?' : null,
+    insightPlan?.insight?.sleep ? 'Are sleep stretches and safe sleep setup appropriate for this stage?' : null,
+    'Are there growth, vitamin, medicine, or diaper questions we should review?',
+  ].filter(Boolean);
+
+  return `
+    <html>
+      <head>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 24px; color: #202D35; }
+          h1 { margin-bottom: 4px; }
+          h2 { color: #2F6F73; margin-top: 24px; }
+          .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 20px 0; }
+          .card { border: 1px solid #d8e2df; border-radius: 10px; padding: 12px; }
+          .value { font-size: 28px; font-weight: 800; }
+          li { margin-bottom: 8px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+          th, td { border-bottom: 1px solid #d8e2df; padding: 8px; text-align: left; font-size: 12px; }
+          th { color: #2F6F73; }
+          .note { margin-top: 24px; font-size: 12px; color: #65747A; }
+        </style>
+      </head>
+      <body>
+        <h1>${baby.name} pediatrician prep</h1>
+        <p>Generated ${new Date().toLocaleString()}</p>
+        <div class="summary">
+          <div class="card"><div class="value">${summary.feeds}</div><div>Feeds today</div></div>
+          <div class="card"><div class="value">${summary.diapers}</div><div>Diapers today</div></div>
+          <div class="card"><div class="value">${summary.sleep}</div><div>Sleep logs today</div></div>
+          <div class="card"><div class="value">${summary.meds}</div><div>Medicine logs today</div></div>
+        </div>
+        <h2>This week</h2>
+        <p>${insightPlan?.insight?.summary || 'Use this report to review recent care logs and questions.'}</p>
+        <h2>Questions to ask</h2>
+        <ul>${questions.map((question) => `<li>${question}</li>`).join('')}</ul>
+        <h2>Recent logs</h2>
+        <table>
+          <thead><tr><th>Date</th><th>Time</th><th>Type</th><th>Amount</th><th>Detail</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <p class="note">This is a personal care log. It does not diagnose, treat, or replace professional medical advice.</p>
+      </body>
+    </html>
+  `;
+}
+
 export default function App() {
+  return (
+    <EntitlementProvider>
+      <BabyTrackerApp />
+    </EntitlementProvider>
+  );
+}
+
+function BabyTrackerApp() {
   const scheme = useColorScheme();
   const dark = scheme === 'dark';
   const theme = dark ? darkTheme : lightTheme;
   const styles = useMemo(() => createStyles(theme), [theme]);
   const dbRef = useRef(null);
+  const plusAccess = usePlusAccess();
 
   const [baby, setBaby] = useState(null);
   const [selectedDate, setSelectedDate] = useState(todayIsoDate());
@@ -271,6 +344,12 @@ export default function App() {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [loaded, setLoaded] = useState(false);
+  const [paywallReason, setPaywallReason] = useState('');
+  const [syncEmail, setSyncEmail] = useState('');
+  const [syncPassword, setSyncPassword] = useState('');
+  const [syncSession, setSyncSession] = useState(null);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -291,6 +370,24 @@ export default function App() {
     boot();
     return () => {
       mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!supabase) return undefined;
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (mounted) setSyncSession(data.session || null);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSyncSession(session || null);
+    });
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
     };
   }, []);
 
@@ -473,6 +570,136 @@ export default function App() {
     await Sharing.shareAsync(result.uri, { mimeType: 'application/pdf', dialogTitle: 'Export care summary' });
   }
 
+  async function exportPediatricianPrep() {
+    if (!baby) return;
+    if (!plusAccess.isPlus) {
+      setPaywallReason('Create a visit-ready report with recent logs, weekly context, and calm questions for your pediatrician.');
+      return;
+    }
+    const html = buildPediatricianPrepHtml(baby, weeklyEvents, summary, insightPlan);
+    const result = await Print.printToFileAsync({ html, base64: false });
+    await Sharing.shareAsync(result.uri, { mimeType: 'application/pdf', dialogTitle: 'Export pediatrician prep' });
+  }
+
+  async function purchasePlus() {
+    try {
+      const customerInfo = await plusAccess.purchaseMonthly();
+      if (customerInfo?.entitlements?.active?.baby_tracker_plus) {
+        setPaywallReason('');
+        Alert.alert('Baby Tracker Plus is active', 'You now have access to Plus insights, reports, and care rhythm tools.');
+      }
+    } catch (error) {
+      if (error?.userCancelled) return;
+      Alert.alert('Could not start purchase', String(error?.message || error));
+    }
+  }
+
+  async function restorePlus() {
+    try {
+      const customerInfo = await plusAccess.restorePurchases();
+      if (customerInfo?.entitlements?.active?.baby_tracker_plus) {
+        Alert.alert('Purchases restored', 'Baby Tracker Plus is active on this device.');
+      } else {
+        Alert.alert('No active Plus subscription found', 'You can still use all free Baby Tracker logging tools.');
+      }
+    } catch (error) {
+      Alert.alert('Could not restore purchases', String(error?.message || error));
+    }
+  }
+
+  function openUrl(url) {
+    Linking.openURL(url).catch(() => Alert.alert('Could not open link', url));
+  }
+
+  async function createSyncAccount() {
+    if (!supabase) {
+      Alert.alert('Supabase is not configured', 'Add your Supabase URL and anon key in app.json before creating sync accounts.');
+      return;
+    }
+    if (!syncEmail.trim() || syncPassword.length < 8) {
+      Alert.alert('Add account details', 'Use an email and a password with at least 8 characters.');
+      return;
+    }
+
+    try {
+      setSyncBusy(true);
+      const { data, error } = await supabase.auth.signUp({
+        email: syncEmail.trim(),
+        password: syncPassword,
+      });
+      if (error) throw error;
+      setSyncSession(data.session || null);
+      Alert.alert('Account created', data.session ? 'Sync is ready.' : 'Check your email to confirm the account, then sign in.');
+    } catch (error) {
+      Alert.alert('Could not create sync account', String(error?.message || error));
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  async function signInForSync() {
+    if (!supabase) {
+      Alert.alert('Supabase is not configured', 'Add your Supabase URL and anon key in app.json before signing in.');
+      return;
+    }
+    if (!syncEmail.trim() || !syncPassword) {
+      Alert.alert('Add account details', 'Enter your sync account email and password.');
+      return;
+    }
+
+    try {
+      setSyncBusy(true);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: syncEmail.trim(),
+        password: syncPassword,
+      });
+      if (error) throw error;
+      setSyncSession(data.session || null);
+      Alert.alert('Signed in', 'You can now sync this device.');
+    } catch (error) {
+      Alert.alert('Could not sign in', String(error?.message || error));
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  async function signOutOfSync() {
+    if (!supabase) return;
+    try {
+      setSyncBusy(true);
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      setSyncSession(null);
+      setSyncPassword('');
+    } catch (error) {
+      Alert.alert('Could not sign out', String(error?.message || error));
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  async function syncNow() {
+    const db = dbRef.current;
+    if (!db || !baby) return;
+    if (!syncSession) {
+      Alert.alert('Sign in first', 'Create or sign in to a sync account before syncing baby data.');
+      return;
+    }
+
+    try {
+      setSyncBusy(true);
+      const counts = await syncBabyTrackerData(db);
+      await loadData(baby.id);
+      const label = new Date().toLocaleString();
+      setLastSyncAt(label);
+      Alert.alert('Sync complete', `Synced ${counts.babies} baby profile(s), ${counts.events} care log(s), and ${counts.reminders} reminder(s).`);
+    } catch (error) {
+      Alert.alert('Could not sync', String(error?.message || error));
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
   function confirmDeleteAllData() {
     Alert.alert('Delete all app data?', 'This removes baby profile, logs, and reminders from this device.', [
       { text: 'Cancel', style: 'cancel' },
@@ -514,6 +741,15 @@ export default function App() {
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style={dark ? 'light' : 'dark'} />
+      <PaywallModal
+        visible={Boolean(paywallReason)}
+        reason={paywallReason}
+        plusAccess={plusAccess}
+        styles={styles}
+        onClose={() => setPaywallReason('')}
+        onPurchase={purchasePlus}
+        onRestore={restorePlus}
+      />
       <ScrollView contentContainerStyle={styles.screen}>
         <View style={styles.hero}>
           <Text style={styles.eyebrow}>Baby tracker</Text>
@@ -545,20 +781,35 @@ export default function App() {
         {insightPlan ? (
           <Section eyebrow="Insights" title={`Week ${insightPlan.week}: what to expect`} styles={styles}>
             <InsightHero insightPlan={insightPlan} styles={styles} />
-            <View style={styles.insightGrid}>
-              <InsightCard label="Feeding" text={insightPlan.insight.feeding} styles={styles} />
-              <InsightCard label="Sleep" text={insightPlan.insight.sleep} styles={styles} />
-              <InsightCard label="Growth" text={insightPlan.insight.growth} styles={styles} />
-              <InsightCard label="Try today" text={insightPlan.insight.tryToday} styles={styles} highlight />
-            </View>
-            <View style={styles.personalizedCard}>
-              <Text style={styles.detailTitle}>Based on today's logs</Text>
-              {insightPlan.personalized.map((item) => (
-                <Text key={item} style={styles.personalizedText}>- {item}</Text>
-              ))}
-            </View>
-            <Checklist items={insightPlan.insight.checklist} styles={styles} />
-            <BadgeRow badges={insightPlan.badges} styles={styles} />
+            {plusAccess.isPlus ? (
+              <>
+                <View style={styles.insightGrid}>
+                  <InsightCard label="Feeding" text={insightPlan.insight.feeding} styles={styles} />
+                  <InsightCard label="Sleep" text={insightPlan.insight.sleep} styles={styles} />
+                  <InsightCard label="Growth" text={insightPlan.insight.growth} styles={styles} />
+                  <InsightCard label="Try today" text={insightPlan.insight.tryToday} styles={styles} highlight />
+                </View>
+                <View style={styles.personalizedCard}>
+                  <Text style={styles.detailTitle}>Based on today's logs</Text>
+                  {insightPlan.personalized.map((item) => (
+                    <Text key={item} style={styles.personalizedText}>- {item}</Text>
+                  ))}
+                </View>
+                <Checklist items={insightPlan.insight.checklist} styles={styles} />
+                <BadgeRow badges={insightPlan.badges} styles={styles} />
+              </>
+            ) : (
+              <>
+                <InsightCard label="Today's free insight" text={insightPlan.insight.tryToday} styles={styles} highlight />
+                <UpgradeCard
+                  title="Unlock deeper patterns and visit-ready reports"
+                  body="Baby Tracker Plus adds personalized weekly guidance, checklists, calm progress badges, and pediatrician prep without changing the free logging tools."
+                  cta="Start 14-day Plus trial"
+                  styles={styles}
+                  onPress={() => setPaywallReason('Unlock personalized weekly insights tied to your baby logs, plus reports and calm care rhythm badges.')}
+                />
+              </>
+            )}
             <Text style={styles.safety}>
               This app does not replace medical advice. Contact your pediatrician or emergency services for urgent concerns.
             </Text>
@@ -660,6 +911,20 @@ export default function App() {
           <Trend label="Diapers" value={trend(['diaper'])} styles={styles} />
           <Trend label="Sleep logs" value={trend(['sleep'])} styles={styles} />
           <Trend label="Growth notes" value={trend(['growth'])} styles={styles} />
+          {!plusAccess.isPlus ? (
+            <UpgradeCard
+              title="See advanced 7-day and 30-day patterns"
+              body="Plus turns logs into practical trends for feeds, diapers, sleep, growth notes, and questions to bring to visits."
+              cta="Preview Baby Tracker Plus"
+              styles={styles}
+              onPress={() => setPaywallReason('Compare 7-day and 30-day care rhythms and turn recent logs into clearer next steps.')}
+            />
+          ) : (
+            <View style={styles.personalizedCard}>
+              <Text style={styles.detailTitle}>Plus pattern note</Text>
+              <Text style={styles.personalizedText}>You logged {weeklyEvents.length} care moments in the last 7 days. Keep using notes for anything you want to review with a clinician or caregiver.</Text>
+            </View>
+          )}
         </Section>
 
         {insightPlan ? (
@@ -675,6 +940,15 @@ export default function App() {
             {insightPlan.sourceLabels.map((label) => (
               <Text key={label} style={styles.sourceText}>{label}</Text>
             ))}
+            {!plusAccess.isPlus ? (
+              <UpgradeCard
+                title="Open the full first-year library"
+                body="Plus unlocks the complete week-by-week library, saved insights, parent check-ins, and caregiver handoff prompts."
+                cta="Unlock Plus"
+                styles={styles}
+                onPress={() => setPaywallReason('Open the full first-year guidance library and save the insights you want to revisit.')}
+              />
+            ) : null}
           </Section>
         ) : null}
 
@@ -702,12 +976,156 @@ export default function App() {
               <Text style={styles.secondaryButtonText}>Export PDF</Text>
             </Pressable>
           </View>
+          <Pressable style={styles.secondaryButtonWide} onPress={exportPediatricianPrep}>
+            <Text style={styles.secondaryButtonText}>Pediatrician prep report {plusAccess.isPlus ? '' : 'Plus'}</Text>
+          </Pressable>
           <Pressable style={styles.destructiveButton} onPress={confirmDeleteAllData}>
             <Text style={styles.destructiveText}>Delete all data</Text>
           </Pressable>
         </Section>
+
+        <Section eyebrow="Sync" title="Supabase backend" styles={styles}>
+          <Text style={styles.empty}>
+            Baby Tracker still works offline first. Supabase sync is optional and can back up logs or prepare for caregiver sharing across devices.
+          </Text>
+          <View style={styles.subscriptionState}>
+            <Text style={styles.subscriptionTitle}>{syncSession ? 'Signed in for sync' : 'Local-only mode'}</Text>
+            <Text style={styles.subscriptionText}>
+              {isSupabaseConfigured ? (lastSyncAt ? `Last sync: ${lastSyncAt}` : 'Supabase is configured. Sign in to sync this device.') : 'Add Supabase URL and anon key in app.json to enable backend sync.'}
+            </Text>
+          </View>
+          {!syncSession ? (
+            <>
+              <TextInput
+                accessibilityLabel="Sync account email"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                placeholder="Email for sync account"
+                placeholderTextColor={theme.muted}
+                value={syncEmail}
+                onChangeText={setSyncEmail}
+                style={styles.input}
+              />
+              <TextInput
+                accessibilityLabel="Sync account password"
+                autoCapitalize="none"
+                placeholder="Password"
+                placeholderTextColor={theme.muted}
+                secureTextEntry
+                value={syncPassword}
+                onChangeText={setSyncPassword}
+                style={styles.input}
+              />
+              <View style={styles.utilityRow}>
+                <Pressable disabled={syncBusy} style={styles.secondaryButton} onPress={createSyncAccount}>
+                  <Text style={styles.secondaryButtonText}>Create account</Text>
+                </Pressable>
+                <Pressable disabled={syncBusy} style={styles.secondaryButton} onPress={signInForSync}>
+                  <Text style={styles.secondaryButtonText}>Sign in</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <>
+              <Pressable disabled={syncBusy} style={styles.primaryButton} onPress={syncNow}>
+                <Text style={styles.primaryButtonText}>{syncBusy ? 'Syncing...' : 'Sync now'}</Text>
+              </Pressable>
+              <Pressable disabled={syncBusy} style={styles.secondaryButtonWide} onPress={signOutOfSync}>
+                <Text style={styles.secondaryButtonText}>Sign out of sync</Text>
+              </Pressable>
+            </>
+          )}
+          <Text style={styles.safety}>
+            Do not store baby data remotely until your privacy policy, Supabase RLS policies, and App Store privacy disclosures are final.
+          </Text>
+        </Section>
+
+        <Section eyebrow="Settings" title="Baby Tracker Plus" styles={styles}>
+          <Text style={styles.empty}>
+            Core logging stays free. Plus is optional and adds personalized insights, advanced patterns, saved guidance, and visit-ready reports.
+          </Text>
+          <View style={styles.subscriptionState}>
+            <Text style={styles.subscriptionTitle}>{plusAccess.isPlus ? 'Plus active' : 'Free plan'}</Text>
+            <Text style={styles.subscriptionText}>
+              {plusAccess.configured ? 'Purchases are configured for App Store testing.' : 'Add your RevenueCat iOS API key before testing real purchases.'}
+            </Text>
+          </View>
+          {!plusAccess.isPlus ? (
+            <Pressable style={styles.primaryButton} onPress={() => setPaywallReason('Start a 14-day trial of Baby Tracker Plus for personalized insights and reports.')}>
+              <Text style={styles.primaryButtonText}>Start 14-day Plus trial</Text>
+            </Pressable>
+          ) : null}
+          <Pressable style={styles.secondaryButtonWide} onPress={restorePlus}>
+            <Text style={styles.secondaryButtonText}>Restore purchases</Text>
+          </Pressable>
+          <View style={styles.settingsLinkRow}>
+            <Pressable onPress={() => openUrl('https://apps.apple.com/account/subscriptions')}>
+              <Text style={styles.linkText}>Manage subscription</Text>
+            </Pressable>
+            <Pressable onPress={() => openUrl('https://example.com/privacy')}>
+              <Text style={styles.linkText}>Privacy policy</Text>
+            </Pressable>
+            <Pressable onPress={() => openUrl('https://example.com/terms')}>
+              <Text style={styles.linkText}>Terms</Text>
+            </Pressable>
+          </View>
+        </Section>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function PaywallModal({ visible, reason, plusAccess, styles, onClose, onPurchase, onRestore }) {
+  return (
+    <Modal animationType="slide" presentationStyle="pageSheet" visible={visible} onRequestClose={onClose}>
+      <SafeAreaView style={styles.paywallSafe}>
+        <ScrollView contentContainerStyle={styles.paywallScreen}>
+          <Text style={styles.eyebrowDark}>Baby Tracker Plus</Text>
+          <Text style={styles.paywallTitle}>Unlock deeper patterns and visit-ready reports</Text>
+          <Text style={styles.paywallReason}>{reason}</Text>
+          <View style={styles.priceCard}>
+            <Text style={styles.priceText}>$4.99/month</Text>
+            <Text style={styles.priceSub}>Includes a 14-day free trial. Cancel anytime in your App Store subscription settings.</Text>
+          </View>
+          {[
+            'Personalized weekly insights tied to your logs',
+            'Advanced 7-day and 30-day care patterns',
+            'Pediatrician prep reports and saved guidance',
+            'Calm checklists and care rhythm badges',
+          ].map((item) => (
+            <View key={item} style={styles.checkItem}>
+              <View style={styles.checkDot} />
+              <Text style={styles.checkText}>{item}</Text>
+            </View>
+          ))}
+          <Text style={styles.safety}>Core care logging, basic exports, reminders, and safety guidance stay free.</Text>
+          {!plusAccess.configured ? (
+            <Text style={styles.setupWarning}>Developer setup needed: add a RevenueCat iOS API key and App Store product baby_tracker_plus_monthly before purchases can run.</Text>
+          ) : null}
+          <Pressable accessibilityLabel="Start Baby Tracker Plus trial" style={styles.primaryButton} onPress={onPurchase}>
+            <Text style={styles.primaryButtonText}>Start 14-day Plus trial</Text>
+          </Pressable>
+          <Pressable accessibilityLabel="Restore purchases" style={styles.secondaryButtonWide} onPress={onRestore}>
+            <Text style={styles.secondaryButtonText}>Restore purchases</Text>
+          </Pressable>
+          <Pressable accessibilityLabel="Close paywall" style={styles.closeButton} onPress={onClose}>
+            <Text style={styles.closeButtonText}>Keep using free tracker</Text>
+          </Pressable>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+function UpgradeCard({ title, body, cta, styles, onPress }) {
+  return (
+    <View style={styles.upgradeCard}>
+      <Text style={styles.upgradeTitle}>{title}</Text>
+      <Text style={styles.upgradeBody}>{body}</Text>
+      <Pressable accessibilityLabel={cta} style={styles.upgradeButton} onPress={onPress}>
+        <Text style={styles.upgradeButtonText}>{cta}</Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -849,6 +1267,61 @@ function createStyles(theme) {
     safe: {
       flex: 1,
       backgroundColor: theme.background,
+    },
+    paywallSafe: {
+      flex: 1,
+      backgroundColor: theme.background,
+    },
+    paywallScreen: {
+      padding: 20,
+      paddingBottom: 34,
+      gap: 14,
+      backgroundColor: theme.background,
+    },
+    paywallTitle: {
+      color: theme.text,
+      fontSize: 30,
+      fontWeight: '900',
+      lineHeight: 36,
+    },
+    paywallReason: {
+      color: theme.muted,
+      fontSize: 16,
+      lineHeight: 23,
+    },
+    priceCard: {
+      padding: 16,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: theme.border,
+      backgroundColor: theme.card,
+      gap: 4,
+    },
+    priceText: {
+      color: theme.text,
+      fontSize: 26,
+      fontWeight: '900',
+    },
+    priceSub: {
+      color: theme.muted,
+      lineHeight: 20,
+    },
+    setupWarning: {
+      padding: 12,
+      borderRadius: 14,
+      overflow: 'hidden',
+      color: theme.warning,
+      backgroundColor: theme.warningBg,
+      lineHeight: 21,
+    },
+    closeButton: {
+      minHeight: 48,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    closeButtonText: {
+      color: theme.muted,
+      fontWeight: '900',
     },
     loadingScreen: {
       flex: 1,
@@ -1029,6 +1502,35 @@ function createStyles(theme) {
     personalizedText: {
       color: theme.text,
       lineHeight: 20,
+    },
+    upgradeCard: {
+      padding: 14,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: theme.primary,
+      backgroundColor: theme.cardSoft,
+      gap: 9,
+    },
+    upgradeTitle: {
+      color: theme.text,
+      fontSize: 16,
+      fontWeight: '900',
+      lineHeight: 22,
+    },
+    upgradeBody: {
+      color: theme.muted,
+      lineHeight: 21,
+    },
+    upgradeButton: {
+      minHeight: 46,
+      borderRadius: 13,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.primary,
+    },
+    upgradeButtonText: {
+      color: '#FFFFFF',
+      fontWeight: '900',
     },
     checklist: {
       padding: 13,
@@ -1319,6 +1821,40 @@ function createStyles(theme) {
       borderColor: theme.border,
     },
     secondaryButtonText: {
+      color: theme.primary,
+      fontWeight: '900',
+    },
+    secondaryButtonWide: {
+      minHeight: 48,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.cardSoft,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    subscriptionState: {
+      padding: 13,
+      borderRadius: 14,
+      backgroundColor: theme.cardSoft,
+      borderWidth: 1,
+      borderColor: theme.border,
+      gap: 4,
+    },
+    subscriptionTitle: {
+      color: theme.text,
+      fontWeight: '900',
+    },
+    subscriptionText: {
+      color: theme.muted,
+      lineHeight: 20,
+    },
+    settingsLinkRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 14,
+    },
+    linkText: {
       color: theme.primary,
       fontWeight: '900',
     },

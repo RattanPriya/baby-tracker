@@ -24,6 +24,14 @@ You can export logs as CSV or PDF files. Export files are generated only when yo
 
 The current MVP does not include advertising SDKs, third-party analytics SDKs, account sync, or remote baby-data storage.
 
+If Supabase sync is enabled, the app may store baby profile details, birth date, feeding logs, bottle logs, pumping logs, sleep logs, diaper logs, medicine logs, growth measurements, activity notes, reminder settings, and free-form notes in a Supabase-hosted database so you can back up or sync data across signed-in devices. This should be disclosed in the final App Store privacy labels before release.
+
+## Purchases
+
+Baby Tracker Plus is processed through Apple in-app purchases and RevenueCat. Purchase services may receive purchase identifiers, subscription status, device/app metadata needed to validate purchases, and anonymous app user identifiers. Baby care logs, notes, baby profile details, diaper logs, feeding logs, sleep logs, medicine logs, and growth records are not sent to RevenueCat by this app.
+
+You can restore purchases from inside the app. You can manage or cancel subscriptions through your App Store account settings.
+
 ## Medical Disclaimer
 
 Baby Tracker is a personal logging tool. It does not diagnose, treat, prevent, or replace professional medical advice. Contact your pediatrician or local emergency services with medical concerns.
